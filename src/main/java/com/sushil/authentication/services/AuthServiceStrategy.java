@@ -3,24 +3,32 @@ package com.sushil.authentication.services;
 import com.sushil.authentication.exceptions.IncorrectSessionDetailsException;
 import com.sushil.authentication.exceptions.IncorrectUserIdOrPasswordException;
 import com.sushil.authentication.exceptions.MaximumLoginLimitException;
+import com.sushil.authentication.exceptions.UserAlreadyExistsException;
 import com.sushil.authentication.models.Session;
+import com.sushil.authentication.models.SessionStatus;
 import com.sushil.authentication.models.User;
 import com.sushil.authentication.repositories.SessionRepository;
 import com.sushil.authentication.repositories.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.util.MultiValueMapAdapter;
+
 import java.util.Random;
 
 @Service
 public class AuthServiceStrategy implements AuthService {
+    private final BCryptPasswordEncoder bCryptPasswordEncoder;
     private final UserRepository userRepository;
     private final SessionRepository sessionRepository;
 
     public AuthServiceStrategy(UserRepository userRepository, SessionRepository sessionRepository) {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
+        this.bCryptPasswordEncoder = new BCryptPasswordEncoder();
     }
 
     private char getRandomCharacter(int low, int high) {
@@ -38,16 +46,26 @@ public class AuthServiceStrategy implements AuthService {
 
         return sb.toString();
     }
+
+    public User signUp(User user) throws UserAlreadyExistsException {
+        Optional<User> userOptional = userRepository.findByEmail(user.getEmail());
+        if (userOptional.isPresent()) {
+            throw new UserAlreadyExistsException("User with email - " + user.getEmail() + " already exists.");
+        }
+
+        user.setPassword(bCryptPasswordEncoder.encode(user.getPassword()));
+        return userRepository.save(user);
+    }
     @Override
-    public Optional<String> login(String email, String password) throws MaximumLoginLimitException {
+    public Session login(String email, String password) throws IncorrectUserIdOrPasswordException, MaximumLoginLimitException {
         Optional<User> userOptional = userRepository.findByEmail(email);
         if (userOptional.isEmpty()) {
-            return Optional.empty();
+            throw new IncorrectUserIdOrPasswordException("Incorrect email or password");
         }
 
         User user = userOptional.get();
-        if (!user.getPassword().equals(password)) {
-            return Optional.empty();
+        if (!bCryptPasswordEncoder.matches(password, user.getPassword())) {
+            throw new IncorrectUserIdOrPasswordException("Incorrect email or password");
         }
 
         List<Session> sessions = user.getSessions();
@@ -56,11 +74,16 @@ public class AuthServiceStrategy implements AuthService {
         }
 
         String sessionToken = user.getId() + "_" + getRandomString(20);
+        MultiValueMapAdapter<String, String> headers = new MultiValueMapAdapter<>(new HashMap<>());
+        headers.add("AUTH_TOKEN", sessionToken);
+
         Session sessionToSave = new Session();
         sessionToSave.setUser(user);
         sessionToSave.setToken(sessionToken);
+        sessionToSave.setSessionStatus(SessionStatus.ACTIVE);
         Session savedSession = sessionRepository.save(sessionToSave);
-        return Optional.of(sessionToken);
+
+        return savedSession;
     }
 
     @Override

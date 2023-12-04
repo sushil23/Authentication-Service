@@ -1,13 +1,12 @@
 package com.sushil.authentication.models;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Getter
 @Setter
@@ -19,7 +18,10 @@ public class User extends BaseModel {
     private String email;
     @Column(nullable = true)
     private Long phoneNumber;
+    @Column(nullable = false)
     private String password;
     @OneToMany(mappedBy = "user")
     private List<Session> sessions;
+    @ManyToMany(fetch = FetchType.EAGER)
+    private Set<Role> roles = new HashSet<>();
 }
